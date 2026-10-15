@@ -1,0 +1,12 @@
+-- Applied remotely via Supabase MCP (dead_room_cleanup).
+--
+-- Dead-room cleanup rules (private.cleanup_dead_rooms()):
+--   1. phase = 'ended' and updated_at < now() - 30 minutes
+--   2. phase = 'lobby' and updated_at < now() - 2 hours
+--   3. created_at < now() - 12 hours (abandoned mid-hunt)
+--
+-- Runs automatically:
+--   - Every 15 minutes via pg_cron ('manhunt_cleanup_dead_rooms')
+--   - Opportunistically inside public.create_room(...)
+--
+-- Deleting a room cascades to public.players and public.player_secrets.
