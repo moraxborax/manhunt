@@ -11,4 +11,16 @@ export default defineConfig(({ command }) => ({
     allowedHosts: true,
   },
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom'],
+          supabase: ['@supabase/supabase-js'],
+          leaflet: ['leaflet'],
+          qr: ['jsqr', 'qrcode.react'],
+        },
+      },
+    },
+  },
 }));
