@@ -94,6 +94,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
   const roomRef = useRef<Room | null>(null);
   roomRef.current = room;
   const trackingActiveRef = useRef(false);
+  const scanTimerRef = useRef<number | null>(null);
 
   const [savedDisplayName, setSavedDisplayName] = useState<string>(() => {
     try {
@@ -174,13 +175,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [room?.phase]);
 
-  // Broadcast own location every 2 seconds while in hiding/hunting phase
+  // Broadcast own location every 2 seconds. Do not depend on GPS/compass
+  // state here: those update many times a second and were restarting this
+  // timer (and flooding the realtime channel) on every tick.
   useEffect(() => {
     const phase = room?.phase;
     if (phase !== 'hiding' && phase !== 'hunting') return;
 
-    const broadcastNow = () => {
-      const loc = sensorsRef.current.lastLocation ?? myLocation;
+    const publish = () => {
+      const loc = sensorsRef.current.lastLocation;
       const currentMe = meRef.current;
       if (!loc || !currentMe) return;
       void syncRef.current.broadcastLocation({
@@ -188,21 +191,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
         userId: currentMe.userId,
         lat: loc.lat,
         lng: loc.lng,
-        heading: sensorsRef.current.lastHeading ?? myHeading,
+        heading: sensorsRef.current.lastHeading,
         updatedAt: new Date().toISOString(),
       });
     };
 
-    broadcastNow();
-    const id = window.setInterval(broadcastNow, 2000);
+    publish();
+    const id = window.setInterval(publish, 2000);
     return () => window.clearInterval(id);
-  }, [room?.phase, myLocation, myHeading]);
+  }, [room?.phase]);
 
-  // 1-second ticker for head-start countdown & scan cooldown
+  // 1-second ticker for head-start countdown, scan cooldown, and location expiry
   useEffect(() => {
-    const hasHidingCountdown = room?.phase === 'hiding' && room.hidingEndsAt;
+    const phase = room?.phase;
+    const live = phase === 'hiding' || phase === 'hunting';
     const hasCooldown = cooldownUntil !== null && cooldownUntil > Date.now();
-    if (!hasHidingCountdown && !hasCooldown) return;
+    if (!live && !hasCooldown) return;
 
     const id = window.setInterval(() => {
       const now = Date.now();
@@ -415,7 +419,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
     if (diff !== 2 && diff !== 4) return;
 
     setScanActive(true);
-    window.setTimeout(() => {
+    if (scanTimerRef.current !== null) {
+      window.clearTimeout(scanTimerRef.current);
+    }
+    scanTimerRef.current = window.setTimeout(() => {
+      scanTimerRef.current = null;
       setScanActive(false);
       const cdMs = (roomRef.current?.settings.scanCooldownSeconds ?? 45) * 1000;
       setCooldownUntil(Date.now() + cdMs);
@@ -438,6 +446,19 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const leaveRoom = useCallback(async () => {
+    const roomId = roomRef.current?.id;
+    if (roomId) {
+      try {
+        await syncRef.current.leaveRoom(roomId);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        return;
+      }
+    }
+    if (scanTimerRef.current !== null) {
+      window.clearTimeout(scanTimerRef.current);
+      scanTimerRef.current = null;
+    }
     trackingActiveRef.current = false;
     sensorsRef.current.stopTracking();
     await syncRef.current.unsubscribe();
@@ -476,8 +497,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
     const hiderIds = new Set(
       players.filter((p) => p.role === 'hider').map((p) => p.id),
     );
-    return Object.values(locations).filter((l) => hiderIds.has(l.playerId));
-  }, [players, locations]);
+    return Object.values(locations).filter((l) => {
+      if (l.playerId === me?.id || !hiderIds.has(l.playerId)) return false;
+      const at = Date.parse(l.updatedAt);
+      return !Number.isFinite(at) || nowTick - at < 30_000;
+    });
+  }, [players, locations, me?.id, nowTick]);
 
   const nearbyHiderCount = useMemo(() => {
     if (!myLocation || !room) return 0;

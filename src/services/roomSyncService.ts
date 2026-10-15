@@ -33,12 +33,46 @@ export function generateRoomCode(): string {
   return Array.from(array, (n) => chars[n % chars.length]).join('');
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object'
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function locationFromMap(
+  raw: Record<string, unknown> | null,
+): PlayerLocation | null {
+  if (!raw || raw.playerId == null || raw.lat == null || raw.lng == null) {
+    return null;
+  }
+  const lat = Number(raw.lat);
+  const lng = Number(raw.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const heading = raw.heading == null ? null : Number(raw.heading);
+  return {
+    playerId: String(raw.playerId),
+    userId: String(raw.userId ?? ''),
+    lat,
+    lng,
+    heading: heading !== null && Number.isFinite(heading) ? heading : null,
+    updatedAt: String(raw.updatedAt || new Date().toISOString()),
+  };
+}
+
+function readLocationMessage(msg: unknown): PlayerLocation | null {
+  const root = asRecord(msg);
+  if (!root) return null;
+  return locationFromMap(asRecord(root.payload)) ?? locationFromMap(root);
+}
+
 export class RoomSyncService {
   private dataChannel: RealtimeChannel | null = null;
   private broadcastChannel: RealtimeChannel | null = null;
   private locations: Record<string, PlayerLocation> = {};
   private currentRoomId: string | null = null;
   private callbacks: SyncCallbacks | null = null;
+  private broadcastReady = false;
+  private lastRefreshedPhase: string | null = null;
 
   async getUserId(): Promise<string | null> {
     const { data } = await supabase.auth.getSession();
@@ -182,7 +216,10 @@ export class RoomSyncService {
     if (error || !data) {
       throw new Error(error?.message || 'Failed to start game');
     }
-    return roomFromRow(data as Record<string, unknown>);
+    const room = roomFromRow(data as Record<string, unknown>);
+    this.lastRefreshedPhase = room.phase;
+    await this.refreshPlayersAndRoom();
+    return room;
   }
 
   async advanceToHunting(roomId: string): Promise<Room> {
@@ -192,7 +229,17 @@ export class RoomSyncService {
     if (error || !data) {
       throw new Error(error?.message || 'Failed to advance game phase');
     }
-    return roomFromRow(data as Record<string, unknown>);
+    const room = roomFromRow(data as Record<string, unknown>);
+    if (room.phase !== 'hiding' && this.lastRefreshedPhase !== room.phase) {
+      this.lastRefreshedPhase = room.phase;
+      await this.refreshPlayersAndRoom();
+    }
+    return room;
+  }
+
+  async leaveRoom(roomId: string): Promise<void> {
+    const { error } = await supabase.rpc('leave_room', { p_room_id: roomId });
+    if (error) throw new Error(error.message);
   }
 
   async catchPlayer(params: {
@@ -265,6 +312,8 @@ export class RoomSyncService {
       supabase.from('rooms').select('*').eq('id', roomId).maybeSingle(),
     ]);
 
+    if (this.currentRoomId !== roomId || this.callbacks !== cb) return;
+
     if (Array.isArray(playerRows)) {
       const sorted = playerRows
         .map((r) => playerFromRow(r as Record<string, unknown>))
@@ -307,72 +356,62 @@ export class RoomSyncService {
           filter: `id=eq.${room.id}`,
         },
         (payload) => {
+          if (this.callbacks !== callbacks) return;
           if (payload.new && typeof payload.new === 'object') {
             callbacks.onRoomChange(
               roomFromRow(payload.new as Record<string, unknown>),
             );
-          } else {
-            void this.refreshPlayersAndRoom();
           }
+          void this.refreshPlayersAndRoom();
         },
       )
       .subscribe();
 
+    this.broadcastReady = false;
     this.broadcastChannel = supabase
       .channel(`room:${room.code}`, {
-        config: { broadcast: { self: true } },
+        config: { broadcast: { self: true, ack: false } },
       })
       .on('broadcast', { event: 'location' }, (msg) => {
-        try {
-          const raw =
-            msg.payload && typeof msg.payload === 'object'
-              ? (msg.payload as Record<string, unknown>)
-              : null;
-          if (!raw) return;
-          const locMap =
-            typeof raw.lat === 'number'
-              ? raw
-              : raw.payload && typeof raw.payload === 'object'
-                ? (raw.payload as Record<string, unknown>)
-                : null;
-          if (!locMap || typeof locMap.lat !== 'number') return;
-
-          const loc: PlayerLocation = {
-            playerId: String(locMap.playerId),
-            userId: String(locMap.userId),
-            lat: Number(locMap.lat),
-            lng: Number(locMap.lng),
-            heading:
-              typeof locMap.heading === 'number' ? locMap.heading : null,
-            updatedAt: String(locMap.updatedAt || new Date().toISOString()),
-          };
-          this.locations = {
-            ...this.locations,
-            [loc.playerId]: loc,
-          };
-          callbacks.onLocationsChange(this.locations);
-        } catch {
-          // ignore malformed broadcast frame
-        }
+        const loc = readLocationMessage(msg);
+        if (!loc) return;
+        this.rememberLocation(loc);
       })
-      .subscribe();
+      .subscribe((status) => {
+        this.broadcastReady = status === 'SUBSCRIBED';
+      });
 
     await this.refreshPlayersAndRoom();
   }
 
   async broadcastLocation(location: PlayerLocation): Promise<void> {
-    if (!this.broadcastChannel) return;
-    await this.broadcastChannel.send({
-      type: 'broadcast',
-      event: 'location',
-      payload: location,
-    });
+    this.rememberLocation(location);
+    if (!this.broadcastChannel || !this.broadcastReady) return;
+    try {
+      await this.broadcastChannel.send({
+        type: 'broadcast',
+        event: 'location',
+        payload: location,
+      });
+    } catch {
+      // The next 2s tick retries. Local state was already stored above.
+    }
+  }
+
+  private rememberLocation(location: PlayerLocation): void {
+    this.locations = {
+      ...this.locations,
+      [location.playerId]: location,
+    };
+    this.callbacks?.onLocationsChange(this.locations);
   }
 
   async unsubscribe(): Promise<void> {
     this.currentRoomId = null;
     this.callbacks = null;
     this.locations = {};
+    this.broadcastReady = false;
+    this.lastRefreshedPhase = null;
     if (this.dataChannel) {
       await supabase.removeChannel(this.dataChannel);
       this.dataChannel = null;

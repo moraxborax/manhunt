@@ -45,6 +45,7 @@ export const MapViewLevel0: React.FC = () => {
   const [engine, setEngine] = useState<'amap-sdk' | 'amap-tiles'>(() =>
     AMAP_JS_KEY ? 'amap-sdk' : 'amap-tiles',
   );
+  const [mapReady, setMapReady] = useState(false);
   const hasCenteredOnUserRef = useRef(false);
 
   const centerGcj02 = useMemo(() => {
@@ -130,6 +131,7 @@ export const MapViewLevel0: React.FC = () => {
           });
           amapInstanceRef.current = map;
           setEngine('amap-sdk');
+          setMapReady(true);
           return;
         } catch {
           // Automatically fall back to keyless AMap Retina XYZ tiles if JS key fails
@@ -158,6 +160,7 @@ export const MapViewLevel0: React.FC = () => {
       const group = L.layerGroup().addTo(map);
       leafletMapRef.current = map;
       leafletMarkersRef.current = group;
+      setMapReady(true);
     }
 
     void initMap();
@@ -179,7 +182,8 @@ export const MapViewLevel0: React.FC = () => {
 
   // Auto-pan to user's real GPS position the first time it arrives
   useEffect(() => {
-    if (!myLocation || hasCenteredOnUserRef.current) return;
+    if (!mapReady || !myLocation || hasCenteredOnUserRef.current) return;
+    if (!amapInstanceRef.current && !leafletMapRef.current) return;
     hasCenteredOnUserRef.current = true;
     const gcj = wgs84ToGcj02(myLocation);
     if (amapInstanceRef.current) {
@@ -187,7 +191,7 @@ export const MapViewLevel0: React.FC = () => {
     } else if (leafletMapRef.current) {
       leafletMapRef.current.setView([gcj.lat, gcj.lng], 17);
     }
-  }, [myLocation]);
+  }, [mapReady, myLocation]);
 
   // Render player markers + directional heading cone + proximity radius circle
   useEffect(() => {
@@ -293,7 +297,7 @@ export const MapViewLevel0: React.FC = () => {
       });
       L.marker([m.gcj02.lat, m.gcj02.lng], { icon }).addTo(group);
     }
-  }, [visibleMarkers, engine, proximityRadiusM, isHunter]);
+  }, [visibleMarkers, engine, proximityRadiusM, isHunter, mapReady]);
 
   const handleRecenter = () => {
     if (amapInstanceRef.current && amapNamespaceRef.current) {

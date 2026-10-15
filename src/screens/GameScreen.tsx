@@ -215,11 +215,14 @@ export const GameScreen: React.FC<{ onToast: (msg: string) => void }> = ({
           ) : (
             <button
               type="button"
+              disabled={room.phase !== 'hunting'}
               onClick={() => setShowHunterScanner(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#FF5252] px-5 py-3.5 text-base font-bold text-white shadow-lg active:scale-[0.99]"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#FF5252] px-5 py-3.5 text-base font-bold text-white shadow-lg active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/40 disabled:shadow-none"
             >
               <ScanLine className="h-5 w-5" />
-              <span>{t.scanToCatch}</span>
+              <span>
+                {room.phase === 'hiding' ? t.radarBlinded : t.scanToCatch}
+              </span>
             </button>
           )}
         </div>

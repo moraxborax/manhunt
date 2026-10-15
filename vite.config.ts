@@ -12,13 +12,15 @@ export default defineConfig(({ command }) => ({
   },
   plugins: [react(), tailwindcss()],
   build: {
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          react: ['react', 'react-dom'],
-          supabase: ['@supabase/supabase-js'],
-          leaflet: ['leaflet'],
-          qr: ['jsqr', 'qrcode.react'],
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /node_modules\/(react-dom|react)\// },
+            { name: 'supabase', test: /node_modules\/@supabase\// },
+            { name: 'leaflet', test: /node_modules\/leaflet\// },
+            { name: 'qr', test: /node_modules\/(jsqr|qrcode\.react)\// },
+          ],
         },
       },
     },

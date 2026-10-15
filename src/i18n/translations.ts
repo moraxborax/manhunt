@@ -73,6 +73,8 @@ export interface Translations {
   hidersWithinRadius: (count: number, radiusM: number) => string;
   tapSensePrompt: string;
   waitingForSignal: string;
+  noHiderSignal: string;
+  radarBlinded: string;
   recenterMap: string;
   amapSdkModeBadge: string;
   amapTileModeBadge: string;
@@ -163,6 +165,8 @@ export const translations: Record<Locale, Translations> = {
       `距离 ${radiusM} 米内有 ${count} 名躲藏者`,
     tapSensePrompt: '点击下方按钮感应附近躲藏者人数',
     waitingForSignal: '正在接收卫星定位信号…',
+    noHiderSignal: '还没有收到躲藏者的定位',
+    radarBlinded: '躲藏倒计时中，雷达已屏蔽',
     recenterMap: '回到我的位置',
     amapSdkModeBadge: '高德地图 JS 2.0 (GCJ-02)',
     amapTileModeBadge: '高德高清瓦片 (GCJ-02)',
@@ -279,6 +283,8 @@ export const translations: Record<Locale, Translations> = {
       `${count} hider${count === 1 ? '' : 's'} within ${radiusM}m`,
     tapSensePrompt: 'Tap sense to check nearby hiders',
     waitingForSignal: 'Waiting for GPS signal…',
+    noHiderSignal: 'No hider location received yet',
+    radarBlinded: 'Head start — radar is blinded',
     recenterMap: 'Center on me',
     amapSdkModeBadge: 'AMap JS 2.0 (GCJ-02)',
     amapTileModeBadge: 'AMap Retina Tiles (GCJ-02)',
