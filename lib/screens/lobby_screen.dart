@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import '../controllers/game_controller.dart';
 import '../models/game_models.dart';
+import '../services/share_service.dart';
+import '../widgets/lobby_invite_sheet.dart';
 import 'game_screen.dart';
 
 class LobbyScreen extends StatefulWidget {
@@ -21,6 +23,8 @@ class _LobbyScreenState extends State<LobbyScreen> {
   void initState() {
     super.initState();
     widget.controller.addListener(_onUpdate);
+    // If we resumed mid-game, leave lobby immediately.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onUpdate());
   }
 
   @override
@@ -44,6 +48,30 @@ class _LobbyScreenState extends State<LobbyScreen> {
     }
   }
 
+  Future<void> _leave() async {
+    await widget.controller.leaveRoom();
+    if (!mounted) return;
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  Future<void> _shareLink() async {
+    final room = widget.controller.room;
+    if (room == null) return;
+    final url = widget.controller.buildInviteUrl();
+    final result = await ShareService.shareUrl(
+      title: 'Manhunt room ${room.code}',
+      text: 'Join my Manhunt game: ${room.code}',
+      url: url,
+    );
+    if (!mounted) return;
+    final msg = switch (result) {
+      ShareResult.shared => 'Invite shared',
+      ShareResult.copied => 'Join link copied',
+      ShareResult.failed => 'Could not share link',
+    };
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
@@ -57,10 +85,26 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
         final settings = controller.lobbySettings;
 
-        return Scaffold(
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) async {
+            if (didPop) return;
+            await _leave();
+          },
+          child: Scaffold(
           appBar: AppBar(
             title: Text('Room ${room.code}'),
             actions: [
+              IconButton(
+                tooltip: 'Show invite QR',
+                onPressed: () => showLobbyInviteSheet(context, controller),
+                icon: const Icon(Icons.qr_code_2),
+              ),
+              IconButton(
+                tooltip: 'Share join link',
+                onPressed: _shareLink,
+                icon: const Icon(Icons.ios_share),
+              ),
               IconButton(
                 tooltip: 'Copy code',
                 onPressed: () {
@@ -71,11 +115,61 @@ class _LobbyScreenState extends State<LobbyScreen> {
                 },
                 icon: const Icon(Icons.copy),
               ),
+              IconButton(
+                tooltip: 'Leave room',
+                onPressed: _leave,
+                icon: const Icon(Icons.exit_to_app),
+              ),
             ],
           ),
           body: ListView(
             padding: const EdgeInsets.all(20),
             children: [
+              Card(
+                color: const Color(0xFF152018),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Invite friends',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Share the link or show a QR they can scan with their phone camera.',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: Colors.white60),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () =>
+                                  showLobbyInviteSheet(context, controller),
+                              icon: const Icon(Icons.qr_code_2),
+                              label: const Text('Show QR'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: _shareLink,
+                              icon: const Icon(Icons.ios_share),
+                              label: const Text('Share link'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
               Text(
                 'Players (${controller.players.length})',
                 style: Theme.of(context).textTheme.titleMedium,
@@ -202,6 +296,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
               ],
             ],
           ),
+        ),
         );
       },
     );

@@ -12,6 +12,12 @@ class GameScreen extends StatelessWidget {
 
   final GameController controller;
 
+  Future<void> _leave(BuildContext context) async {
+    await controller.leaveRoom();
+    if (!context.mounted) return;
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -41,31 +47,56 @@ class GameScreen extends StatelessWidget {
 
         final roleColor =
             controller.isHunter ? Colors.redAccent : const Color(0xFF2AFF9A);
+        final ended = room.phase == GamePhase.ended;
 
-        return Scaffold(
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) async {
+            if (didPop) return;
+            await _leave(context);
+          },
+          child: Scaffold(
           appBar: AppBar(
             title: Text(
               controller.isHunter ? 'HUNTER' : 'HIDER',
               style: TextStyle(color: roleColor, fontWeight: FontWeight.bold),
             ),
             actions: [
+              if (!ended)
+                IconButton(
+                  tooltip: 'Stealth / pocket mode',
+                  onPressed: controller.toggleStealth,
+                  icon: const Icon(Icons.visibility_off),
+                ),
               IconButton(
-                tooltip: 'Stealth / pocket mode',
-                onPressed: controller.toggleStealth,
-                icon: const Icon(Icons.visibility_off),
+                tooltip: 'Leave room',
+                onPressed: () => _leave(context),
+                icon: const Icon(Icons.exit_to_app),
               ),
             ],
           ),
           body: Column(
             children: [
               _StatusBanner(controller: controller),
+              if (ended)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () => _leave(context),
+                      icon: const Icon(Icons.home),
+                      label: const Text('Back to home'),
+                    ),
+                  ),
+                ),
               Expanded(child: _DifficultyBody(controller: controller)),
               SafeArea(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
-                      if (controller.isHider)
+                      if (controller.isHider && !ended)
                         Expanded(
                           child: FilledButton.icon(
                             onPressed: () =>
@@ -74,26 +105,25 @@ class GameScreen extends StatelessWidget {
                             label: const Text('Show Catch QR'),
                           ),
                         ),
-                      if (controller.isHunter) ...[
+                      if (controller.isHunter && !ended)
                         Expanded(
                           child: FilledButton.icon(
                             style: FilledButton.styleFrom(
                               backgroundColor: Colors.redAccent,
                             ),
-                            onPressed: room.phase == GamePhase.ended
-                                ? null
-                                : () => showHunterScanSheet(context, controller),
+                            onPressed: () =>
+                                showHunterScanSheet(context, controller),
                             icon: const Icon(Icons.qr_code_scanner),
                             label: const Text('Scan to Catch'),
                           ),
                         ),
-                      ],
                     ],
                   ),
                 ),
               ),
             ],
           ),
+        ),
         );
       },
     );

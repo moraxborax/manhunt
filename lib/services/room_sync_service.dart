@@ -147,6 +147,42 @@ class RoomSyncService {
     return row?['catch_secret'] as String?;
   }
 
+  /// Resume an existing membership in [code] without calling join_room.
+  /// Returns null if the room is gone/ended or this user is not a member.
+  Future<({Room room, Player player, String catchSecret})?> tryResumeRoom(
+    String code,
+  ) async {
+    final session = _client.auth.currentSession;
+    if (session == null) return null;
+
+    final roomRow = await _client.rpc(
+      'get_room_by_code',
+      params: {'p_code': code},
+    );
+    if (roomRow == null) return null;
+
+    final room = Room.fromJson(Map<String, dynamic>.from(roomRow as Map));
+    if (room.phase == GamePhase.ended) return null;
+
+    final uid = userId;
+    if (uid == null) return null;
+
+    final playerRow = await _client
+        .from('players')
+        .select()
+        .eq('room_id', room.id)
+        .eq('user_id', uid)
+        .maybeSingle();
+    if (playerRow == null) return null;
+
+    final player = Player.fromJson(playerRow);
+    final secret = await fetchOwnCatchSecret(player.id);
+    if (secret == null) return null;
+
+    await subscribe(room);
+    return (room: room, player: player, catchSecret: secret);
+  }
+
   Future<void> subscribe(Room room) async {
     await unsubscribe();
 

@@ -287,9 +287,116 @@ class GameController extends ChangeNotifier {
     if (me != null) await prefs.setString('playerId', me!.id);
   }
 
+  Future<void> _clearSavedRoom() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('roomCode');
+    await prefs.remove('playerId');
+  }
+
   Future<String?> savedDisplayName() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('displayName');
+  }
+
+  Future<String?> savedRoomCode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('roomCode');
+  }
+
+  /// Room code from `?room=CODE` in the browser URL (GitHub Pages / localhost).
+  String? getUrlRoomCode() {
+    final raw = Uri.base.queryParameters['room']?.trim().toUpperCase();
+    if (raw == null || raw.isEmpty) return null;
+    return raw;
+  }
+
+  /// Full invite URL for the current room, preserving path (e.g. `/manhunt/`).
+  String buildInviteUrl() {
+    final code = room?.code;
+    if (code == null) return Uri.base.toString();
+    return Uri.base.replace(queryParameters: {'room': code}).toString();
+  }
+
+  /// Parse a scanned invite URL or plain room code into a 6-char code.
+  static String? parseRoomCodeFromScan(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+    try {
+      final uri = Uri.parse(trimmed);
+      final fromQuery = uri.queryParameters['room']?.trim().toUpperCase();
+      if (fromQuery != null && fromQuery.isNotEmpty) return fromQuery;
+    } catch (_) {}
+    final upper = trimmed.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+    if (upper.length >= 4 && upper.length <= 8) return upper;
+    return null;
+  }
+
+  /// Restore membership from SharedPreferences + persisted Supabase auth session.
+  Future<bool> tryReconnectSavedSession() async {
+    final code = await savedRoomCode();
+    if (code == null || code.isEmpty) return false;
+
+    busy = true;
+    error = null;
+    notifyListeners();
+    try {
+      final result = await _sync.tryResumeRoom(code);
+      if (result == null) {
+        await _clearSavedRoom();
+        return false;
+      }
+      room = result.room;
+      me = result.player;
+      catchSecret = result.catchSecret;
+      lobbySettings = result.room.settings;
+      await _persistSession(result.player.displayName);
+      await _bindStreams();
+      if (room!.phase == GamePhase.hiding || room!.phase == GamePhase.hunting) {
+        await _startSensors();
+        _scheduleHidingAdvance();
+      }
+      return true;
+    } catch (e) {
+      error = e.toString();
+      await _clearSavedRoom();
+      return false;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> leaveRoom() async {
+    _scanTimer?.cancel();
+    _cooldownTick?.cancel();
+    _hidingTimer?.cancel();
+    _locationBroadcast?.cancel();
+    await _gpsSub?.cancel();
+    await _headingSub?.cancel();
+    _gpsSub = null;
+    _headingSub = null;
+    await _sensors.stopTracking();
+    await _playersSub?.cancel();
+    await _roomSub?.cancel();
+    await _locSub?.cancel();
+    _playersSub = null;
+    _roomSub = null;
+    _locSub = null;
+    await _sync.unsubscribe();
+
+    room = null;
+    me = null;
+    catchSecret = null;
+    players = [];
+    locations = {};
+    myLocation = null;
+    myHeading = null;
+    stealthMode = false;
+    scanActive = false;
+    cooldownUntil = null;
+    lobbySettings = const RoomSettings();
+    await _clearSavedRoom();
+    notifyListeners();
   }
 
   Future<void> _run(Future<void> Function() fn) async {
