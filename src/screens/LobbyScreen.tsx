@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
 import {
+  Check,
   Compass,
   Copy,
   Crown,
   Globe,
   LogOut,
   Minus,
+  Pencil,
   Play,
   Plus,
   QrCode,
   Share2,
   User,
+  X,
 } from 'lucide-react';
 import { LobbyInviteQrModal } from '../components/QrModals';
 import { useGame } from '../context/GameContext';
@@ -28,6 +31,7 @@ export const LobbyScreen: React.FC<{ onToast: (msg: string) => void }> = ({
     lobbySettings,
     isHost,
     busy,
+    updateDisplayName,
     saveLobbySettings,
     startGame,
     requestCompass,
@@ -36,8 +40,27 @@ export const LobbyScreen: React.FC<{ onToast: (msg: string) => void }> = ({
   } = useGame();
   const { t, toggleLocale } = useI18n();
   const [showInviteQr, setShowInviteQr] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState('');
 
   if (!room) return null;
+
+  const startEditingName = () => {
+    setDraftName(me?.displayName ?? '');
+    setEditingName(true);
+  };
+
+  const commitEditingName = async () => {
+    const trimmed = draftName.trim();
+    if (!trimmed) {
+      onToast(t.enterYourNameError);
+      return;
+    }
+    const ok = await updateDisplayName(trimmed);
+    if (ok) {
+      setEditingName(false);
+    }
+  };
 
   const activeSettings = isHost ? lobbySettings : room.settings;
   const diffMeta = t.difficulties[activeSettings.difficulty];
@@ -152,19 +175,65 @@ export const LobbyScreen: React.FC<{ onToast: (msg: string) => void }> = ({
                   key={p.id}
                   className="flex items-center justify-between px-4 py-3"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-1 items-center gap-3 pr-2">
                     {p.isHost ? (
-                      <Crown className="h-4 w-4 text-[#2AFF9A]" />
+                      <Crown className="h-4 w-4 shrink-0 text-[#2AFF9A]" />
                     ) : (
-                      <User className="h-4 w-4 text-white/50" />
+                      <User className="h-4 w-4 shrink-0 text-white/50" />
                     )}
-                    <span className="font-medium text-white">
-                      {p.displayName}
-                    </span>
-                    {isMe && (
-                      <span className="rounded-md bg-[#2AFF9A]/15 px-1.5 py-0.5 text-[10px] font-bold text-[#2AFF9A]">
-                        {t.youBadge}
-                      </span>
+                    {isMe && editingName ? (
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          void commitEditingName();
+                        }}
+                        className="flex flex-1 items-center gap-1.5"
+                      >
+                        <input
+                          type="text"
+                          value={draftName}
+                          onChange={(e) => setDraftName(e.target.value)}
+                          placeholder={t.namePlaceholder}
+                          maxLength={24}
+                          autoFocus
+                          className="w-full rounded-lg border border-[#2AFF9A] bg-[#0B120E] px-2.5 py-1 text-sm text-white focus:outline-none"
+                        />
+                        <button
+                          type="submit"
+                          disabled={busy}
+                          className="rounded-lg bg-[#2AFF9A] p-1.5 text-[#05120C] hover:bg-[#2AFF9A]/90"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingName(false)}
+                          className="rounded-lg bg-white/10 p-1.5 text-white/70 hover:bg-white/20"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </form>
+                    ) : (
+                      <>
+                        <span className="font-medium text-white">
+                          {p.displayName}
+                        </span>
+                        {isMe && (
+                          <>
+                            <span className="rounded-md bg-[#2AFF9A]/15 px-1.5 py-0.5 text-[10px] font-bold text-[#2AFF9A]">
+                              {t.youBadge}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={startEditingName}
+                              aria-label="Edit display name"
+                              className="rounded-md p-1 text-white/45 hover:bg-white/10 hover:text-[#2AFF9A]"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </>
                     )}
                   </div>
                   <span className="text-xs text-white/50">

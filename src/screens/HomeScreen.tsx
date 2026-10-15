@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Globe, QrCode, Users, Zap } from 'lucide-react';
+import { Globe, QrCode, Users, X, Zap } from 'lucide-react';
 import { QrScannerModal } from '../components/QrModals';
 import { useGame } from '../context/GameContext';
 import { useI18n } from '../i18n/I18nContext';
@@ -20,21 +20,9 @@ export const HomeScreen: React.FC<{ onToast: (msg: string) => void }> = ({
   } = useGame();
   const { t, toggleLocale } = useI18n();
 
-  const [name, setName] = useState(savedDisplayName);
-  const [code, setCode] = useState(urlRoomCode ?? '');
+  const [name, setName] = useState(() => savedDisplayName);
+  const [code, setCode] = useState(() => urlRoomCode ?? '');
   const [scanningRoomQr, setScanningRoomQr] = useState(false);
-
-  useEffect(() => {
-    if (savedDisplayName && !name) {
-      setName(savedDisplayName);
-    }
-  }, [savedDisplayName, name]);
-
-  useEffect(() => {
-    if (urlRoomCode && !code) {
-      setCode(urlRoomCode);
-    }
-  }, [urlRoomCode, code]);
 
   useEffect(() => {
     if (error) {
@@ -116,14 +104,26 @@ export const HomeScreen: React.FC<{ onToast: (msg: string) => void }> = ({
             <label className="mb-1.5 block text-xs font-medium text-white/75">
               {t.yourName}
             </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t.namePlaceholder}
-              maxLength={24}
-              className="w-full rounded-xl border border-white/15 bg-[#152018] px-4 py-3 text-base text-white placeholder-white/35 focus:border-[#2AFF9A] focus:outline-none"
-            />
+            <div className="relative">
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={t.namePlaceholder}
+                maxLength={24}
+                className="w-full rounded-xl border border-white/15 bg-[#152018] py-3 pr-10 pl-4 text-base text-white placeholder-white/35 focus:border-[#2AFF9A] focus:outline-none"
+              />
+              {name.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setName('')}
+                  aria-label="Clear name"
+                  className="absolute top-1/2 right-2.5 -translate-y-1/2 rounded-lg p-1 text-white/45 hover:bg-white/10 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </div>
 
           <button
@@ -146,14 +146,26 @@ export const HomeScreen: React.FC<{ onToast: (msg: string) => void }> = ({
 
         <div className="space-y-3">
           <div className="flex gap-2.5">
-            <input
-              type="text"
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder={t.roomCodePlaceholder}
-              maxLength={8}
-              className="flex-1 rounded-xl border border-white/15 bg-[#152018] px-4 py-3 font-mono text-base tracking-widest text-white uppercase placeholder:font-sans placeholder:tracking-normal placeholder-white/35 focus:border-[#2AFF9A] focus:outline-none"
-            />
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                placeholder={t.roomCodePlaceholder}
+                maxLength={8}
+                className="w-full rounded-xl border border-white/15 bg-[#152018] py-3 pr-9 pl-4 font-mono text-base tracking-widest text-white uppercase placeholder:font-sans placeholder:tracking-normal placeholder-white/35 focus:border-[#2AFF9A] focus:outline-none"
+              />
+              {code.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setCode('')}
+                  aria-label="Clear room code"
+                  className="absolute top-1/2 right-2.5 -translate-y-1/2 rounded-lg p-1 text-white/45 hover:bg-white/10 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
             <button
               type="button"
               disabled={busy}

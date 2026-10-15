@@ -50,6 +50,7 @@ export interface GameContextValue {
   clearError: () => void;
   createRoom: (displayName: string) => Promise<boolean>;
   joinRoom: (code: string, displayName: string) => Promise<boolean>;
+  updateDisplayName: (displayName: string) => Promise<boolean>;
   saveLobbySettings: (next: RoomSettings) => Promise<void>;
   startGame: () => Promise<void>;
   catchFromQr: (raw: string) => Promise<boolean>;
@@ -94,13 +95,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
   roomRef.current = room;
   const trackingActiveRef = useRef(false);
 
-  const savedDisplayName = useMemo(() => {
+  const [savedDisplayName, setSavedDisplayName] = useState<string>(() => {
     try {
       return localStorage.getItem(LS_NAME) || '';
     } catch {
       return '';
     }
-  }, [room]);
+  });
 
   const urlRoomCode = useMemo(() => {
     try {
@@ -114,6 +115,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const persistSession = useCallback(
     (displayName: string, roomCode: string, playerId: string) => {
+      setSavedDisplayName(displayName);
       try {
         localStorage.setItem(LS_NAME, displayName);
         localStorage.setItem(LS_ROOM, roomCode);
@@ -316,6 +318,34 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
     [persistSession, syncCallbacks],
   );
 
+  const updateDisplayName = useCallback(
+    async (displayName: string): Promise<boolean> => {
+      const clean = displayName.trim();
+      if (!clean) return false;
+      setSavedDisplayName(clean);
+      try {
+        localStorage.setItem(LS_NAME, clean);
+      } catch {
+        // ignore
+      }
+      if (!me || !room) return true;
+      setBusy(true);
+      setError(null);
+      try {
+        const updated = await syncRef.current.updateDisplayName(me.id, clean);
+        setMe(updated);
+        persistSession(updated.displayName, room.code, updated.id);
+        return true;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [me, room, persistSession],
+  );
+
   const saveLobbySettings = useCallback(
     async (next: RoomSettings) => {
       setLobbySettings(next);
@@ -488,6 +518,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
         clearError,
         createRoom,
         joinRoom,
+        updateDisplayName,
         saveLobbySettings,
         startGame,
         catchFromQr,

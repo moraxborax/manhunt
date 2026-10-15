@@ -123,9 +123,39 @@ export class RoomSyncService {
     if (joinErr || !playerRow) {
       throw new Error(joinErr?.message || 'Failed to join room');
     }
-    const player = playerFromRow(playerRow as Record<string, unknown>);
+    let player = playerFromRow(playerRow as Record<string, unknown>);
+    if (player.displayName !== displayName) {
+      const { data: updatedRow } = await supabase
+        .from('players')
+        .update({ display_name: displayName })
+        .eq('id', player.id)
+        .select('*')
+        .maybeSingle();
+      if (updatedRow) {
+        player = playerFromRow(updatedRow as Record<string, unknown>);
+      }
+    }
     await this.subscribe(room, callbacks);
     return { room, player, catchSecret };
+  }
+
+  async updateDisplayName(
+    playerId: string,
+    displayName: string,
+  ): Promise<Player> {
+    const clean = displayName.trim();
+    const { data, error } = await supabase
+      .from('players')
+      .update({ display_name: clean })
+      .eq('id', playerId)
+      .select('*')
+      .single();
+    if (error || !data) {
+      throw new Error(error?.message || 'Failed to update display name');
+    }
+    const updated = playerFromRow(data as Record<string, unknown>);
+    await this.refreshPlayersAndRoom();
+    return updated;
   }
 
   async updateRoomSettings(
