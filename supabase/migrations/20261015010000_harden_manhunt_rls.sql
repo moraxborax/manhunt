@@ -1,0 +1,8 @@
+-- Hardened remotely via Supabase MCP (harden_manhunt_rls).
+-- Summary of intended RLS model:
+--
+-- rooms:   SELECT members/host; INSERT as host; UPDATE host only (host_id/code locked by trigger)
+-- players: SELECT same room; INSERT self in lobby; UPDATE own name only (role locked by trigger + GUC)
+-- player_secrets: SELECT/INSERT own row only (must own player_id)
+-- Role changes: only catch_player / start_game (SECURITY DEFINER + manhunt.allow_role_change)
+-- No DELETE for authenticated/anon on game tables
