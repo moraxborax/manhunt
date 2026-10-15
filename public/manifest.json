@@ -1,0 +1,18 @@
+{
+  "name": "Manhunt · 猎人追捕",
+  "short_name": "Manhunt",
+  "description": "Real-life outdoor hide-and-seek phone game · 户外真人猎人追捕游戏",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0B120E",
+  "theme_color": "#0B120E",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

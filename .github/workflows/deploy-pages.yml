@@ -1,15 +1,8 @@
-# Deploys Flutter Web to GitHub Pages on every push to main.
-# Live URL (if repo is named "manhunt"):
-#   https://moraxborax.github.io/manhunt/
-#
-# First-time setup in the GitHub repo:
-#   Settings → Pages → Build and deployment → Source: GitHub Actions
-
-name: Deploy to GitHub Pages
+name: Deploy Web PWA to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, js-port]
   workflow_dispatch:
 
 permissions:
@@ -18,40 +11,51 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: "pages"
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          channel: stable
-          cache: true
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: flutter pub get
+        run: pnpm install --frozen-lockfile
 
-      - name: Build web
-        # base-href MUST match the repo name for project Pages sites.
-        # If you rename the repo, change /manhunt/ below.
-        run: flutter build web --release --base-href /manhunt/
+      - name: Typecheck & Run unit tests
+        run: |
+          pnpm run lint
+          pnpm run test
+
+      - name: Build Vite PWA
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_AMAP_KEY: ${{ secrets.VITE_AMAP_KEY }}
+          VITE_AMAP_SECURITY_JS_CODE: ${{ secrets.VITE_AMAP_SECURITY_JS_CODE }}
+        run: pnpm run build
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: build/web
+          path: dist
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
